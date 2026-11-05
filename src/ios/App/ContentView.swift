@@ -1725,6 +1725,7 @@ struct EmulatorViewOptimized: View {
                         gameID: gameManager.currentGame?.settingsKey,
                         screens: touchLabScreens,
                         enabled: !isPaused && !isEditingControlLayout,
+                        editing: isEditingControlLayout,
                         topInset: isPhonePortrait ? 0 : topBarHeight
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .touchLab) }

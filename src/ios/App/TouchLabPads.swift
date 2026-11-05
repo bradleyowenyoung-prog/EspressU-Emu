@@ -26,6 +26,12 @@ enum TouchLabSettings {
     static let racingLockHoldKey = "espressu.touchlab.racing.lockHold"
     static let defaultRacingLockHold = RacingPad.defaultLockHold
     static let racingLockHoldRange = RacingPad.lockHoldRange
+    /// JSON of the player's moved/resized Racing controls.
+    static let racingPlacementsKey = "espressu.touchlab.racing.placements"
+
+    static func resetRacingPlacements() {
+        UserDefaults.standard.removeObject(forKey: racingPlacementsKey)
+    }
 
     /// One remappable racing action and the key its Wii U button is stored under.
     struct RacingAction: Identifiable {
@@ -39,9 +45,9 @@ enum TouchLabSettings {
     static let racingActions: [RacingAction] = [
         RacingAction(id: "accelerate", title: "Accelerate (Gas)", detail: "Bottom-right pedal", fallback: .a),
         RacingAction(id: "brake", title: "Brake / Reverse", detail: "Pedal left of Gas", fallback: .b),
-        RacingAction(id: "drift", title: "Drift / Hop", detail: "Drift pedal above Gas; sends Gas + Drift", fallback: .r),
-        RacingAction(id: "item", title: "Item", detail: "Left of Brake", fallback: .l),
-        RacingAction(id: "look", title: "Look behind", detail: "Above Brake", fallback: .x),
+        RacingAction(id: "drift", title: "Drift / Hop", detail: "Button above Gas", fallback: .r),
+        RacingAction(id: "item", title: "Item", detail: "Bottom, left of Brake", fallback: .l),
+        RacingAction(id: "look", title: "Look behind", detail: "Left of Drift", fallback: .x),
         RacingAction(id: "skill", title: "Skill", detail: "Above Drift", fallback: .up),
     ]
 
@@ -257,6 +263,7 @@ struct TouchLabPadOverlay: View {
     let gameID: String?
     let screens: TouchLabScreenState
     let enabled: Bool
+    var editing: Bool = false
     let topInset: CGFloat
 
     @AppStorage(ControllerLayoutSettings.scaleKey) private var scale = ControllerLayoutSettings.defaultScale
@@ -280,9 +287,20 @@ struct TouchLabPadOverlay: View {
     @AppStorage("espressu.touchlab.racing.map.look") private var mapLook = PadButton.x.rawValue
     @AppStorage("espressu.touchlab.racing.map.skill") private var mapSkill = PadButton.up.rawValue
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
+    @AppStorage(TouchLabSettings.racingPlacementsKey) private var racingPlacements = ""
 
     var body: some View {
-        TouchPad(schemeID: schemeID,
+        pad
+            .ignoresSafeArea()
+            .onAppear {
+                TouchLabSettings.migrateLegacyLargeA()
+                syncGamepadSize()
+            }
+            .onChange(of: screens) { _ in syncGamepadSize() }
+    }
+
+    private var pad: TouchPad {
+        var pad = TouchPad(schemeID: schemeID,
                  output: CemuBridgePadOutput.shared,
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
@@ -298,12 +316,8 @@ struct TouchLabPadOverlay: View {
                  rectSpace: .window,
                  extraInsets: Insets(top: topInset),
                  makeScheme: makeScheme)
-            .ignoresSafeArea()
-            .onAppear {
-                TouchLabSettings.migrateLegacyLargeA()
-                syncGamepadSize()
-            }
-            .onChange(of: screens) { _ in syncGamepadSize() }
+        pad.editing = editing && schemeID == RacingPad.schemeInfo.id
+        return pad
     }
 
     private var revision: Int {
@@ -317,6 +331,7 @@ struct TouchLabPadOverlay: View {
         h.combine(racingLockHold)
         for m in [mapAccelerate, mapBrake, mapDrift, mapItem, mapLook, mapSkill] { h.combine(m) }
         h.combine(aScale)
+        h.combine(racingPlacements)
         return h.finalize()
     }
 
@@ -337,11 +352,24 @@ struct TouchLabPadOverlay: View {
         case ZonePad.schemeInfo.id:
             return ZonePad(aScale: CGFloat(aScale))
         case RacingPad.schemeInfo.id:
-            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt,
-                                                        accelerateLock: racingLock,
-                                                        mapping: TouchLabSettings.racingMapping(),
-                                                        lockHold: racingLockHold),
-                             aScale: CGFloat(aScale))
+            let pad = RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto && !racingLock, tilt: racingTilt,
+                                                           accelerateLock: racingLock,
+                                                           mapping: TouchLabSettings.racingMapping(),
+                                                           lockHold: racingLockHold),
+                                aScale: CGFloat(aScale),
+                                placements: RacingPad.decode(racingPlacements))
+            pad.onPlacementsChanged = { placements in
+                let encoded = RacingPad.encode(placements)
+                // Defer so the view isn't rebuilt in the middle of handling the touch that ended.
+                DispatchQueue.main.async {
+                    if encoded.isEmpty {
+                        UserDefaults.standard.removeObject(forKey: TouchLabSettings.racingPlacementsKey)
+                    } else {
+                        UserDefaults.standard.set(encoded, forKey: TouchLabSettings.racingPlacementsKey)
+                    }
+                }
+            }
+            return pad
         default:
             return SchemeCatalog.make(id, aScale: CGFloat(aScale))
         }

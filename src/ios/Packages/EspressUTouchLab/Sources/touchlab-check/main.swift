@@ -431,27 +431,54 @@ do {
     check(r.sticks[.left] == .zero, "racing: stick centres when the thumb lifts")
 }
 
+func buttonCentre(_ s: ControlScheme, _ b: PadButton) -> CGPoint {
+    s.controls.first { $0.button == b }!.shape.center
+}
+
 do {
     let (e, r, s) = racingEngine()
-    let a = pedalCentre(s, [.a]), ar = pedalCentre(s, [.a, .r]), b = pedalCentre(s, [.b])
-    check(!s.controls.contains { if case .pedal(let x) = $0.kind { return x == [.r] }; return false },
-          "racing: there is no drift-only pedal")
+    let a = pedalCentre(s, [.a]), b = pedalCentre(s, [.b]), drift = buttonCentre(s, .r)
+    check(!s.controls.contains { if case .pedal(let x) = $0.kind { return x.contains(.r) }; return false },
+          "racing: Drift is a normal button, not a pedal")
     e.began(1, at: a, time: 0)
     check(r.held == [.a], "racing: thumb on the accelerate zone holds A, got \(r.held)")
-    e.moved(1, to: ar, time: 0.1)
-    check(r.held == [.a, .r], "racing: sliding up onto the Drift pedal holds A+R, got \(r.held)")
-    e.moved(1, to: ar, time: 0.3)
-    e.moved(1, to: a, time: 0.4)
-    check(r.held == [.a], "racing: and back down to A, got \(r.held)")
     e.moved(1, to: b, time: 0.5)
     check(r.held == [.b], "racing: brake is next to accelerate, got \(r.held)")
-    e.ended(1, at: b, time: 0.6)
+    e.moved(1, to: a, time: 0.6)
+    check(r.held == [.a], "racing: and back to Gas, got \(r.held)")
+    e.began(2, at: drift, time: 0.7)
+    check(r.held == [.a, .r], "racing: a second finger on Drift adds R, got \(r.held)")
+    e.ended(2, at: drift, time: 0.8)
+    e.ended(1, at: a, time: 0.9)
     check(r.held.isEmpty, "racing: lift releases")
-    r.log = []
-    e.began(2, at: a, time: 1)
-    e.moved(2, to: ar, time: 1.1)
-    e.ended(2, at: ar, time: 1.2)
-    check(r.log == ["A+", "R+", "A-", "R-"] || r.log == ["A+", "R+", "R-", "A-"], "racing: A to A+R presses A once and keeps it: \(r.log)")
+}
+
+// Moved and resized Racing controls.
+do {
+    let (_, _, s) = racingEngine()
+    let ctx = ipad.context(.stacked)
+    let before = s.editablePieces
+    check(Set(before.map(\.id)) == Set(RacingPad.pieceIDs), "racing edit: every piece is editable, got \(before.map(\.id))")
+    let target = CGRect(x: ctx.safeBounds.midX - 60, y: ctx.safeBounds.midY - 40, width: 120, height: 80)
+    s.setEditedFrame(target, for: "drift")
+    let moved = s.editablePieces.first { $0.id == "drift" }!.rect
+    check(abs(moved.midX - target.midX) < 1 && abs(moved.midY - target.midY) < 1 && abs(moved.width - 120) < 1
+          && abs(moved.height - 80) < 1, "racing edit: drift moved and resized, got \(moved)")
+    check(s.controls.first { $0.button == .r }!.shape.boundingBox == moved, "racing edit: the live control follows")
+    var saved: [String: RacingPad.Placement] = [:]
+    s.onPlacementsChanged = { saved = $0 }
+    s.commitEdits()
+    let restored = RacingPad(placements: RacingPad.decode(RacingPad.encode(saved)))
+    restored.layout(ctx)
+    let again = restored.editablePieces.first { $0.id == "drift" }!.rect
+    check(abs(again.midX - moved.midX) < 1 && abs(again.width - moved.width) < 1, "racing edit: placements round-trip, got \(again)")
+    s.setEditedFrame(CGRect(x: -500, y: -500, width: 100, height: 100), for: "gas")
+    let gas = s.editablePieces.first { $0.id == "gas" }!.rect
+    check(ctx.safeBounds.contains(gas), "racing edit: pieces stay on screen, got \(gas)")
+    s.resetEditedFrame(for: "drift")
+    let back = s.editablePieces.first { $0.id == "drift" }!.rect
+    check(back == before.first { $0.id == "drift" }!.rect, "racing edit: reset puts drift back")
+    check(s.controls.contains { if case .steer = $0.kind { return true }; return false }, "racing edit: still steers")
 }
 
 do {
@@ -541,7 +568,7 @@ do {
 // Accelerate lock: hold Gas past the hold time and let go, Gas stays held; tap Gas to release.
 do {
     let (e, r, s) = racingEngine(RacingPad.Options(accelerateLock: true, lockHold: 0.6))
-    let a = pedalCentre(s, [.a]), b = pedalCentre(s, [.b]), rr = pedalCentre(s, [.a, .r])
+    let a = pedalCentre(s, [.a]), b = pedalCentre(s, [.b]), rr = buttonCentre(s, .r)
     e.began(1, at: a, time: 0)
     e.ended(1, at: a, time: 0.3)
     check(r.held.isEmpty && !s.accelerateLocked, "racing lock: a short press does not lock, got \(r.held)")

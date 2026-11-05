@@ -27,6 +27,27 @@ public final class TouchPadView: UIView {
 
     public enum RectSpace: Equatable { case local, window }
 
+    /// While true (and the scheme is `LayoutEditable`), touches move and resize controls instead of playing.
+    public var isEditingLayout = false {
+        didSet {
+            guard isEditingLayout != oldValue else { return }
+            endEdit(commit: true)
+            selectedPiece = nil
+            setNeedsDisplay()
+        }
+    }
+
+    private enum EditMode { case move, resize, pinch }
+    private var editing: LayoutEditable? { isEditingLayout ? engine.scheme as? LayoutEditable : nil }
+    private var selectedPiece: String?
+    private var editID: String?
+    private var editMode: EditMode = .move
+    private var editStartRect: CGRect = .zero
+    private var editStartPoints: [ObjectIdentifier: CGPoint] = [:]
+    private var editTouches: [ObjectIdentifier: CGPoint] = [:]
+    private static let handleRadius: CGFloat = 13
+    private static let minPieceSize: CGFloat = 28
+
     public var extraInsets = Insets() { didSet { relayout() } }
 
     private var displayLink: CADisplayLink?
@@ -101,6 +122,10 @@ public final class TouchPadView: UIView {
     }
 
     public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if editing != nil {
+            guard !isHidden, self.point(inside: point, with: event) else { return nil }
+            return editID != nil || pieceHit(point) != nil ? self : nil
+        }
         guard isInputEnabled, isUserInteractionEnabled, !isHidden, alpha > 0.01,
               self.point(inside: point, with: event) else { return nil }
         return engine.claims(point) ? self : nil
@@ -109,11 +134,13 @@ public final class TouchPadView: UIView {
     private func id(_ t: UITouch) -> TouchID { ObjectIdentifier(t).hashValue }
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if editing != nil { editBegan(touches); return }
         for t in touches { engine.began(id(t), at: t.location(in: self), time: t.timestamp) }
         changed()
     }
 
     public override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if editing != nil { editMoved(touches); return }
         for t in touches {
             for c in event?.coalescedTouches(for: t) ?? [t] {
                 engine.moved(id(t), to: c.location(in: self), time: c.timestamp)
@@ -123,11 +150,13 @@ public final class TouchPadView: UIView {
     }
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if editing != nil { editEnded(touches); return }
         for t in touches { engine.ended(id(t), at: t.location(in: self), time: t.timestamp) }
         changed()
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if editing != nil { editEnded(touches); return }
         for t in touches { engine.cancelled(id(t), time: t.timestamp) }
         changed()
     }
@@ -207,7 +236,135 @@ public final class TouchPadView: UIView {
 
     public override func draw(_ rect: CGRect) {
         guard let g = UIGraphicsGetCurrentContext() else { return }
-        for e in engine.render() { PadDrawing.draw(e, in: g, opacity: controlOpacity) }
+        let opacity = editing != nil ? max(controlOpacity, 0.7) : controlOpacity
+        for e in engine.render() { PadDrawing.draw(e, in: g, opacity: opacity) }
+        if let ed = editing { drawEditing(ed.editablePieces) }
+    }
+
+    // MARK: Layout editing
+
+    private func handleCenter(_ r: CGRect) -> CGPoint { CGPoint(x: r.minX, y: r.minY) }
+
+    private func pieceHit(_ p: CGPoint) -> (piece: EditablePiece, mode: EditMode)? {
+        guard let ed = editing else { return nil }
+        let pieces = ed.editablePieces
+        if let sel = selectedPiece, let piece = pieces.first(where: { $0.id == sel }),
+           handleCenter(piece.rect).distance(to: p) <= Self.handleRadius + 10 {
+            return (piece, .resize)
+        }
+        let hits = pieces.filter { $0.rect.insetBy(dx: -8, dy: -8).contains(p) }
+        guard let best = hits.min(by: { $0.rect.width * $0.rect.height < $1.rect.width * $1.rect.height }) else { return nil }
+        return (best, .move)
+    }
+
+    private func currentRect(_ id: String) -> CGRect? {
+        editing?.editablePieces.first { $0.id == id }?.rect
+    }
+
+    private func editBegan(_ touches: Set<UITouch>) {
+        for t in touches {
+            let p = t.location(in: self), key = ObjectIdentifier(t)
+            if editID == nil {
+                guard let hit = pieceHit(p) else { continue }
+                selectedPiece = hit.piece.id
+                if t.tapCount >= 2, hit.mode == .move {
+                    // Double-tap puts a control back where the style places it.
+                    editing?.resetEditedFrame(for: hit.piece.id)
+                    editing?.commitEdits()
+                    continue
+                }
+                editID = hit.piece.id
+                editMode = hit.mode
+                editStartRect = hit.piece.rect
+                editTouches = [key: p]
+                editStartPoints = editTouches
+            } else if editTouches.count == 1, let id = editID {
+                // A second finger pinches the control being dragged.
+                editTouches[key] = p
+                editStartRect = currentRect(id) ?? editStartRect
+                editStartPoints = editTouches
+                editMode = .pinch
+            }
+        }
+        setNeedsDisplay()
+    }
+
+    private func editMoved(_ touches: Set<UITouch>) {
+        for t in touches where editTouches[ObjectIdentifier(t)] != nil {
+            editTouches[ObjectIdentifier(t)] = t.location(in: self)
+        }
+        guard let id = editID, let ed = editing else { return }
+        var r = editStartRect
+        let minS = Self.minPieceSize
+        switch editMode {
+        case .move, .resize:
+            guard let first = editStartPoints.first, let now = editTouches[first.key] else { return }
+            let dx = now.x - first.value.x, dy = now.y - first.value.y
+            if editMode == .move {
+                r = r.offsetBy(dx: dx, dy: dy)
+            } else {
+                let x = min(r.minX + dx, r.maxX - minS), y = min(r.minY + dy, r.maxY - minS)
+                r = CGRect(x: x, y: y, width: r.maxX - x, height: r.maxY - y)
+            }
+        case .pinch:
+            let keys = Array(editStartPoints.keys)
+            guard keys.count == 2, let a0 = editStartPoints[keys[0]], let b0 = editStartPoints[keys[1]],
+                  let a1 = editTouches[keys[0]], let b1 = editTouches[keys[1]] else { return }
+            let scale = min(max(a1.distance(to: b1) / max(a0.distance(to: b0), 1), 0.25), 5)
+            let mid0 = CGPoint(x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2)
+            let mid1 = CGPoint(x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2)
+            let w = max(r.width * scale, minS), h = max(r.height * scale, minS)
+            r = CGRect(center: CGPoint(x: r.midX + mid1.x - mid0.x, y: r.midY + mid1.y - mid0.y),
+                       size: CGSize(width: w, height: h))
+        }
+        ed.setEditedFrame(r, for: id)
+        setNeedsDisplay()
+    }
+
+    private func editEnded(_ touches: Set<UITouch>) {
+        for t in touches { editTouches.removeValue(forKey: ObjectIdentifier(t)) }
+        if editMode == .pinch, editTouches.count == 1, let id = editID {
+            // Lifting one finger of a pinch carries on as a drag with the other.
+            editMode = .move
+            editStartRect = currentRect(id) ?? editStartRect
+            editStartPoints = editTouches
+            return
+        }
+        if editTouches.isEmpty { endEdit(commit: true) }
+        setNeedsDisplay()
+    }
+
+    private func endEdit(commit: Bool) {
+        let wasEditing = editID != nil
+        editID = nil
+        editTouches.removeAll()
+        editStartPoints.removeAll()
+        if commit, wasEditing { (engine.scheme as? LayoutEditable)?.commitEdits() }
+    }
+
+    private func drawEditing(_ pieces: [EditablePiece]) {
+        for piece in pieces {
+            let selected = piece.id == selectedPiece
+            let path = UIBezierPath(roundedRect: piece.rect.insetBy(dx: -2, dy: -2), cornerRadius: 8)
+            path.lineWidth = selected ? 3 : 1.5
+            path.setLineDash([6, 4], count: 2, phase: 0)
+            (selected ? UIColor(red: 0.35, green: 0.62, blue: 1, alpha: 1) : UIColor.white.withAlphaComponent(0.85)).setStroke()
+            path.stroke()
+            guard selected else { continue }
+            let c = handleCenter(piece.rect)
+            let r = Self.handleRadius
+            let knob = UIBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
+            UIColor(red: 0.35, green: 0.62, blue: 1, alpha: 1).setFill()
+            knob.fill()
+            UIColor.white.setStroke()
+            knob.lineWidth = 2
+            knob.stroke()
+            let arrow = UIBezierPath()
+            arrow.move(to: CGPoint(x: c.x - r * 0.45, y: c.y - r * 0.45))
+            arrow.addLine(to: CGPoint(x: c.x + r * 0.45, y: c.y + r * 0.45))
+            arrow.lineWidth = 2
+            arrow.stroke()
+        }
     }
 }
 
@@ -277,6 +434,7 @@ public struct TouchPad: UIViewRepresentable {
     public var opacity: CGFloat
     public var haptics: Bool
     public var enabled: Bool
+    public var editing: Bool = false
     public var stickTuning: StickTuning
     public var rectSpace: TouchPadView.RectSpace
     public var extraInsets: Insets
@@ -332,6 +490,7 @@ public struct TouchPad: UIViewRepresentable {
         if view.extraInsets != extraInsets { view.extraInsets = extraInsets }
         if view.stickTuning != stickTuning { view.stickTuning = stickTuning }
         if view.isInputEnabled != enabled { view.isInputEnabled = enabled }
+        if view.isEditingLayout != editing { view.isEditingLayout = editing }
         if view.touchscreenRect != touchscreenRect { view.touchscreenRect = touchscreenRect }
         if view.videoRects != videoRects { view.videoRects = videoRects }
         if view.scale != scale { view.scale = scale }
