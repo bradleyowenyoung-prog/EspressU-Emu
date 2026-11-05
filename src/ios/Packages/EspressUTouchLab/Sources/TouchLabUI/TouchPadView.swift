@@ -396,9 +396,21 @@ enum PadDrawing {
 
         guard !e.label.isEmpty, e.role != .zone, e.role != .stickBase else { return }
         let box = e.shape.boundingBox
-        let fitWidth = 0.9 * box.width / max(CGFloat(e.label.count) * 0.62, 1)
+        var word = e.label
+        if let sym = e.symbol {
+            let pt = max(min(box.height * 0.42, box.width * 0.42, 30), 9)
+            let config = UIImage.SymbolConfiguration(pointSize: pt, weight: .semibold)
+            if let img = UIImage(systemName: sym.name, withConfiguration: config)?
+                .withTintColor(text.withAlphaComponent(min(1, alpha * 1.25)), renderingMode: .alwaysOriginal) {
+                img.draw(at: CGPoint(x: box.midX - img.size.width / 2, y: box.midY - img.size.height / 2))
+                return
+            }
+            word = sym.fallback
+            guard !word.isEmpty else { return }
+        }
+        let fitWidth = 0.9 * box.width / max(CGFloat(word.count) * 0.62, 1)
         let size = max(min(box.height * 0.42, 26, fitWidth), 8)
-        let label = LabelCache.image(e.label, size: size, text: text, alpha: alpha)
+        let label = LabelCache.image(word, size: size, text: text, alpha: alpha)
         label.draw(at: CGPoint(x: box.midX - label.size.width / 2, y: box.midY - label.size.height / 2))
     }
 

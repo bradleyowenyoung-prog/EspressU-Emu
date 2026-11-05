@@ -28,6 +28,7 @@ enum TouchLabSettings {
     static let racingLockHoldRange = RacingPad.lockHoldRange
     /// JSON of the player's moved/resized Racing controls.
     static let racingPlacementsKey = "espressu.touchlab.racing.placements"
+    static let racingIconsKey = "espressu.touchlab.racing.icons"
 
     static func resetRacingPlacements() {
         UserDefaults.standard.removeObject(forKey: racingPlacementsKey)
@@ -288,6 +289,7 @@ struct TouchLabPadOverlay: View {
     @AppStorage("espressu.touchlab.racing.map.skill") private var mapSkill = PadButton.up.rawValue
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
     @AppStorage(TouchLabSettings.racingPlacementsKey) private var racingPlacements = ""
+    @AppStorage(TouchLabSettings.racingIconsKey) private var racingIcons = true
 
     var body: some View {
         pad
@@ -332,6 +334,7 @@ struct TouchLabPadOverlay: View {
         for m in [mapAccelerate, mapBrake, mapDrift, mapItem, mapLook, mapSkill] { h.combine(m) }
         h.combine(aScale)
         h.combine(racingPlacements)
+        h.combine(racingIcons)
         return h.finalize()
     }
 
@@ -355,7 +358,7 @@ struct TouchLabPadOverlay: View {
             let pad = RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto && !racingLock, tilt: racingTilt,
                                                            accelerateLock: racingLock,
                                                            mapping: TouchLabSettings.racingMapping(),
-                                                           lockHold: racingLockHold),
+                                                           lockHold: racingLockHold, icons: racingIcons),
                                 aScale: CGFloat(aScale),
                                 placements: RacingPad.decode(racingPlacements))
             pad.onPlacementsChanged = { placements in

@@ -58,6 +58,17 @@ public struct RenderElement: Equatable, Sendable {
     public var lit: Bool
     public var ghost: Bool
 
+    /// A label that asks for a symbol image, with a word to show if the symbol is missing.
+    public static func symbolLabel(_ name: String, fallback: String) -> String { "sf:" + name + "|" + fallback }
+
+    /// The symbol name and fallback word, if this label asks for a symbol.
+    public var symbol: (name: String, fallback: String)? {
+        guard label.hasPrefix("sf:") else { return nil }
+        let body = label.dropFirst(3)
+        guard let bar = body.firstIndex(of: "|") else { return (String(body), "") }
+        return (String(body[..<bar]), String(body[body.index(after: bar)...]))
+    }
+
     public init(shape: PadShape, role: Role, label: String = "", lit: Bool = false, ghost: Bool = false) {
         self.shape = shape
         self.role = role

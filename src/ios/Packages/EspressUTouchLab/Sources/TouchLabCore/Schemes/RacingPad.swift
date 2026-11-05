@@ -29,7 +29,7 @@ public protocol LayoutEditable: AnyObject {
 public final class RacingPad: ControlScheme, LayoutEditable {
     public static let schemeInfo = SchemeInfo(
         id: "racing",
-        name: "Racing",
+        name: "Mario Kart 8",
         summary: "Made for Mario Kart 8: compact controls in the bottom corners. Steering on the left; Gas, Brake, Drift, Item, Look and Skill on the right. Every action can be remapped, and the buttons can be moved and resized here.")
 
     /// Which Wii U button each racing action sends.
@@ -88,9 +88,12 @@ public final class RacingPad: ControlScheme, LayoutEditable {
         public var mapping: Mapping
         /// Seconds Gas must be held before letting go locks it.
         public var lockHold: Double
+        /// Draw symbols instead of words on the buttons.
+        public var icons: Bool
         public init(autoAccelerate: Bool = false, tilt: Bool = false,
                     accelerateLock: Bool = false, mapping: Mapping = .standard,
-                    lockHold: Double = RacingPad.defaultLockHold) {
+                    lockHold: Double = RacingPad.defaultLockHold, icons: Bool = false) {
+            self.icons = icons
             self.autoAccelerate = autoAccelerate
             self.tilt = tilt
             self.accelerateLock = accelerateLock
@@ -374,8 +377,28 @@ public final class RacingPad: ControlScheme, LayoutEditable {
             out[i].label = Self.lockedLabel
             out[i].lit = true
         }
+        if options.icons {
+            for i in out.indices {
+                if let name = Self.symbols[out[i].label] {
+                    out[i].label = RenderElement.symbolLabel(name, fallback: out[i].label)
+                }
+            }
+        }
         return out
     }
+
+    /// SF Symbol drawn for each label when icons are on; the word is the fallback.
+    public static let symbols: [String: String] = [
+        "GAS": "pedal.accelerator.fill",
+        lockedLabel: "lock.fill",
+        "BRAKE": "pedal.brake.fill",
+        "DRIFT": "car.rear.and.tire.marks",
+        "ITEM": "gift.fill",
+        "LOOK": "eye.fill",
+        "SKILL": "sparkles",
+        "STEER": "steeringwheel",
+        "TILT": "steeringwheel",
+    ]
 
     override public func ambient() -> Contribution? {
         var buttons: Set<PadButton> = []

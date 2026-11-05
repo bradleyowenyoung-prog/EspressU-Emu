@@ -453,6 +453,20 @@ do {
     check(r.held.isEmpty, "racing: lift releases")
 }
 
+// Symbols on the Mario Kart 8 buttons.
+do {
+    let (_, _, words) = racingEngine()
+    let (_, _, icons) = racingEngine(RacingPad.Options(icons: true))
+    let w = words.render(pressed: [], sticks: [:]), i = icons.render(pressed: [], sticks: [:])
+    check(w.allSatisfy { $0.symbol == nil }, "racing icons: off by default in the scheme")
+    let gas = i.first { $0.role == .pedal && $0.symbol?.fallback == "GAS" }
+    check(gas?.symbol?.name == "pedal.accelerator.fill", "racing icons: Gas uses the accelerator symbol, got \(String(describing: gas?.label))")
+    check(i.contains { $0.symbol?.name == "gift.fill" } && i.contains { $0.symbol?.name == "car.rear.and.tire.marks" },
+          "racing icons: Item and Drift symbols")
+    check(i.contains { $0.label == "+" || $0.label == PadButton.plus.description }, "racing icons: + keeps its text")
+    check(Set(icons.editablePieces.map(\.id)) == Set(words.editablePieces.map(\.id)), "racing icons: editing unaffected")
+}
+
 // Moved and resized Racing controls.
 do {
     let (_, _, s) = racingEngine()

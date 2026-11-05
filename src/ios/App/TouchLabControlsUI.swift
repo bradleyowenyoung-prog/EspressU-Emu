@@ -139,7 +139,7 @@ struct TouchLabStyleSettingsRows: View {
                 }
 
                 Text(scheme == TouchLabSettings.racingStyleID
-                     ? "To move or resize Racing buttons, open the controls panel in game (Move controls) and drag them."
+                     ? "To move or resize Mario Kart 8 buttons, open the controls panel in game (Move controls) and drag them."
                      : "These styles don't support dragging individual buttons. Size, opacity, haptics and the stick options below apply to them.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
@@ -191,6 +191,7 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(TouchLabSettings.racingLockKey) private var racingLock = false
     @AppStorage(TouchLabSettings.racingLockHoldKey) private var racingLockHold = TouchLabSettings.defaultRacingLockHold
     @AppStorage(TouchLabSettings.racingPlacementsKey) private var racingPlacements = ""
+    @AppStorage(TouchLabSettings.racingIconsKey) private var racingIcons = true
     @State private var collapsed = false
     @State private var confirmingPlacementReset = false
 
@@ -243,12 +244,14 @@ struct TouchLabLayoutPanel: View {
                 Button("Reset positions") { confirmingPlacementReset = true }
                     .buttonStyle(EspressUSecondaryButtonStyle())
                     .disabled(racingPlacements.isEmpty)
-                    .confirmationDialog("Put every Racing button back?", isPresented: $confirmingPlacementReset,
+                    .confirmationDialog("Put every Mario Kart 8 button back?", isPresented: $confirmingPlacementReset,
                                         titleVisibility: .visible) {
                         Button("Reset positions", role: .destructive) { TouchLabSettings.resetRacingPlacements() }
                         Button("Cancel", role: .cancel) { }
                     }
             }
+
+            PanelToggle(title: "Symbols on buttons (off = words)", isOn: $racingIcons)
 
             PanelToggle(title: "Hold Gas to lock accelerate", isOn: $racingLock)
                 .onChange(of: racingLock) { on in if on { racingAuto = false } }
