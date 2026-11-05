@@ -458,7 +458,7 @@ do {
     let (_, _, s) = racingEngine()
     let ctx = ipad.context(.stacked)
     let before = s.editablePieces
-    check(Set(before.map(\.id)) == Set(RacingPad.pieceIDs), "racing edit: every piece is editable, got \(before.map(\.id))")
+    check(Set(before.map(\.id)) == Set(RacingPad.pieceIDs).subtracting(["recentre"]), "racing edit: every piece is editable, got \(before.map(\.id))")
     let target = CGRect(x: ctx.safeBounds.midX - 60, y: ctx.safeBounds.midY - 40, width: 120, height: 80)
     s.setEditedFrame(target, for: "drift")
     let moved = s.editablePieces.first { $0.id == "drift" }!.rect
@@ -479,6 +479,11 @@ do {
     let back = s.editablePieces.first { $0.id == "drift" }!.rect
     check(back == before.first { $0.id == "drift" }!.rect, "racing edit: reset puts drift back")
     check(s.controls.contains { if case .steer = $0.kind { return true }; return false }, "racing edit: still steers")
+    let homeTarget = CGRect(x: ctx.safeBounds.minX + 20, y: ctx.safeBounds.minY + 20, width: 90, height: 60)
+    s.setEditedFrame(homeTarget, for: "home")
+    let home = s.controls.first { $0.role == .system && $0.button == .home }!.shape
+    check(abs(home.center.x - homeTarget.midX) < 1 && abs(home.boundingBox.width - 60) < 1,
+          "racing edit: Home moves and resizes as a circle, got \(home)")
 }
 
 do {

@@ -67,7 +67,7 @@ public final class RacingPad: ControlScheme, LayoutEditable {
         }
     }
 
-    public static let pieceIDs = ["gas", "brake", "drift", "item", "look", "skill", "steer"]
+    public static let pieceIDs = ["gas", "brake", "drift", "item", "look", "skill", "steer", "minus", "plus", "home", "recentre"]
 
     public static func encode(_ p: [String: Placement]) -> String {
         guard !p.isEmpty, let d = try? JSONEncoder().encode(p) else { return "" }
@@ -153,6 +153,15 @@ public final class RacingPad: ControlScheme, LayoutEditable {
     /// The editable piece a control belongs to, if any.
     public static func pieceID(_ c: PadControl) -> String? {
         if case .steer = c.kind { return "steer" }
+        if case .recentre = c.kind { return "recentre" }
+        if c.role == .system, let b = c.button {
+            switch b {
+            case .minus: return "minus"
+            case .plus: return "plus"
+            case .home: return "home"
+            default: return nil
+            }
+        }
         switch c.label {
         case "GAS", lockedLabel: return "gas"
         case "BRAKE": return "brake"
@@ -238,13 +247,24 @@ public final class RacingPad: ControlScheme, LayoutEditable {
 
         let rowY = bandTop + 0.2 * u + 0.4 * u
         let step = 1.3 * u
+        // Menu buttons: circles, so a placed one uses the largest circle that fits its box.
+        func circle(_ id: String, _ x: CGFloat) -> PadShape {
+            let d = PadParts.systemDiameter * u
+            let r = placed(id, CGRect(center: CGPoint(x: x, y: rowY), size: CGSize(width: d + gap, height: d + gap)))
+            return .circle(center: r.center, radius: min(r.width, r.height) / 2)
+        }
+        func system(_ b: PadButton, _ id: String, _ x: CGFloat) -> PadControl {
+            var c = PadParts.system(b, at: .zero, u: u)
+            c.shape = circle(id, x)
+            return c
+        }
         var row: [PadControl] = [
-            PadParts.system(.minus, at: CGPoint(x: s.midX - step, y: rowY), u: u),
-            PadParts.system(.plus, at: CGPoint(x: s.midX, y: rowY), u: u),
-            PadParts.system(.home, at: CGPoint(x: s.midX + step, y: rowY), u: u),
+            system(.minus, "minus", s.midX - step),
+            system(.plus, "plus", s.midX),
+            system(.home, "home", s.midX + step),
         ]
         if options.tilt {
-            row.append(PadControl(.recentre, shape: .circle(center: CGPoint(x: s.midX + 2 * step, y: rowY), radius: PadParts.systemDiameter / 2 * u),
+            row.append(PadControl(.recentre, shape: circle("recentre", s.midX + 2 * step),
                                   role: .system, label: "C", reach: 0.25 * u, priority: 2))
         }
         for i in row.indices { row[i].priority = 2 }
