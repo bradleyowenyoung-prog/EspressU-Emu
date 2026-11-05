@@ -70,6 +70,9 @@ jobs:
         run: |
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
           ci/build-stikjit.sh
+          # The StikJIT module has a public enum also called StikJIT, so its generated .swiftinterface
+          # (StikJIT.StikJIT.Foo) can't be re-read by Xcode 26's explicit module builds. Drop the redundant qualifier.
+          find dependencies/StikJIT.xcframework -name '*.swiftinterface' -print -exec sed -i '' 's/StikJIT\.StikJIT\./StikJIT./g' {} +
 
       - name: Build Cemu core
         run: |
@@ -81,39 +84,44 @@ jobs:
           mkdir -p build-ios/out && rm -rf build-ios/out/Cemu.framework
           cp -R build-ios/src/Cemu.framework build-ios/out/
 
-      - name: Upload vcpkg logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            build-ios/vcpkg-manifest-install.log
-            dependencies/vcpkg/buildtrees/**/*.log
-          if-no-files-found: ignore
-
       - name: Build app
         working-directory: src/ios
+        shell: bash
         run: |
+          set -eo pipefail
           # Match the bundle ID of the EspressU 1.4 already on the phone so games and settings carry over.
           sed -i '' "s/com\.am4rdev\.EspressU/${BUNDLE_ID}/g" project.yml
           sed -i '' "s/MARKETING_VERSION: '1.0'/MARKETING_VERSION: '${APP_VERSION}'/" project.yml
           xcodegen generate
           xcodebuild -project EspressU.xcodeproj -scheme EspressU -sdk iphoneos -configuration Release \
-            -derivedDataPath "$GITHUB_WORKSPACE/dd" CODE_SIGNING_ALLOWED=NO build | tail -200
+            -derivedDataPath "$GITHUB_WORKSPACE/dd" CODE_SIGNING_ALLOWED=NO \
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO build 2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log" | tail -200
 
       - name: Package IPA
         run: |
           APP=$(find dd/Build/Products/Release-iphoneos -maxdepth 1 -name 'EspressU.app' | head -1)
-          test -d "$APP"
+          test -d "$APP" && test -f "$APP/EspressU" && test -d "$APP/Frameworks/Cemu.framework"
           if command -v ldid >/dev/null; then
             ldid -Ssrc/ios/Sideload.entitlements "$APP/EspressU" || true
           fi
           mkdir -p ipa/Payload && cp -R "$APP" ipa/Payload/
           (cd ipa && zip -qry "../EspressU-${APP_VERSION}-racing.ipa" Payload)
           ls -lh EspressU-*.ipa
+          SIZE=$(stat -f%z EspressU-*.ipa); test "$SIZE" -gt 5000000 || { echo "IPA is only $SIZE bytes"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
           name: EspressU-${{ env.APP_VERSION }}-racing-ipa
           path: EspressU-*.ipa
           retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            xcodebuild.log
+            build-ios/vcpkg-manifest-install.log
+            dependencies/vcpkg/buildtrees/**/*.log
+          if-no-files-found: ignore
