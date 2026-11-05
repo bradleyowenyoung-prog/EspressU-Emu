@@ -3,11 +3,16 @@ name: Build EspressU IPA (racing controls)
 on:
   push:
     branches: [main, racing-controls]
+    # Workflow-only edits don't need a 25-minute rebuild; use "Run workflow" for that.
+    paths-ignore: ['.github/workflows/**']
   workflow_dispatch:
 
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   touchlab-check:
@@ -115,6 +120,15 @@ jobs:
           name: EspressU-${{ env.APP_VERSION }}-racing-ipa
           path: EspressU-*.ipa
           retention-days: 30
+
+      - name: Publish as a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${APP_VERSION}-racing"
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" EspressU-*.ipa --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "EspressU ${APP_VERSION} racing controls" --notes "Unsigned IPA built from ${GITHUB_SHA::7}. Sign with your own certificate."
 
       - name: Upload build logs on failure
         if: failure()

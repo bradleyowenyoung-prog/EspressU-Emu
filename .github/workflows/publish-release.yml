@@ -1,0 +1,39 @@
+name: Publish IPA as a release
+
+on:
+  push:
+    branches: [racing-controls]
+    paths: ['.github/workflows/publish-release.yml']
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Build run ID whose IPA artifact to publish'
+        required: true
+        default: '41949006735'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      RUN_ID: ${{ github.event.inputs.run_id || '41949006735' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: EspressU-1.4.1-racing-ipa
+          run-id: ${{ env.RUN_ID }}
+          github-token: ${{ github.token }}
+          path: out
+      - name: Create release
+        run: |
+          ls -l out
+          IPA=$(ls out/*.ipa | head -1)
+          TAG=v1.4.1-racing
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "$IPA" --repo "$GITHUB_REPOSITORY" --target racing-controls \
+            --title "EspressU 1.4.1 racing controls" \
+            --notes "Unsigned IPA. Racing control style with remappable Gas/Brake/Drift/Item/Look/Skill and an adjustable accelerate lock. Sign with your own certificate."
