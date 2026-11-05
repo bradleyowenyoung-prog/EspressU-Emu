@@ -71,7 +71,9 @@ jobs:
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
           ci/build-stikjit.sh
           # Fails loudly if the interface still has the ambiguous module-qualified names.
-          ! grep -l 'StikJIT\.StikJIT\.' dependencies/StikJIT.xcframework/*/StikJIT.framework/Modules/StikJIT.swiftmodule/*.swiftinterface
+          IFACE=dependencies/StikJIT.xcframework/*/StikJIT.framework/Modules/StikJIT.swiftmodule
+          grep -h -m3 -E 'module-alias|Module___' $IFACE/*.swiftinterface || true
+          ! grep -l -E '(^|[^_[:alnum:]])StikJIT\.StikJIT\.' $IFACE/*.swiftinterface
 
       - name: Build Cemu core
         run: |
