@@ -70,9 +70,8 @@ jobs:
         run: |
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
           ci/build-stikjit.sh
-          # The StikJIT module has a public enum also called StikJIT, so its generated .swiftinterface
-          # (StikJIT.StikJIT.Foo) can't be re-read by Xcode 26's explicit module builds. Drop the redundant qualifier.
-          find dependencies/StikJIT.xcframework -name '*.swiftinterface' -print -exec sed -i '' 's/StikJIT\.StikJIT\./StikJIT./g' {} +
+          # Fails loudly if the interface still has the ambiguous module-qualified names.
+          ! grep -l 'StikJIT\.StikJIT\.' dependencies/StikJIT.xcframework/*/StikJIT.framework/Modules/StikJIT.swiftmodule/*.swiftinterface
 
       - name: Build Cemu core
         run: |
