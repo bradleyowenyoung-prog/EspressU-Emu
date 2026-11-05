@@ -17,7 +17,7 @@ permissions:
 jobs:
   touchlab-check:
     name: On-screen controls checks
-    runs-on: macos-26
+    runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,7 @@ jobs:
   build:
     name: Build unsigned IPA
     needs: touchlab-check
-    runs-on: macos-26
+    runs-on: macos-15-intel
     timeout-minutes: 300
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
