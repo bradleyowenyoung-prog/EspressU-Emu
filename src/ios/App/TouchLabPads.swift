@@ -22,6 +22,63 @@ enum TouchLabSettings {
 
     static let racingAutoAccelerateKey = "espressu.touchlab.racing.autoAccelerate"
     static let racingTiltKey = "espressu.touchlab.racing.tilt"
+    static let racingLockKey = "espressu.touchlab.racing.accelerateLock"
+    static let racingLockHoldKey = "espressu.touchlab.racing.lockHold"
+    static let defaultRacingLockHold = RacingPad.defaultLockHold
+    static let racingLockHoldRange = RacingPad.lockHoldRange
+
+    /// One remappable racing action and the key its Wii U button is stored under.
+    struct RacingAction: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let fallback: PadButton
+        var key: String { "espressu.touchlab.racing.map." + id }
+    }
+
+    static let racingActions: [RacingAction] = [
+        RacingAction(id: "accelerate", title: "Accelerate (Gas)", detail: "Bottom-right pedal", fallback: .a),
+        RacingAction(id: "brake", title: "Brake / Reverse", detail: "Pedal left of Gas", fallback: .b),
+        RacingAction(id: "drift", title: "Drift / Hop", detail: "Top pedal; Gas+Drift sends both", fallback: .r),
+        RacingAction(id: "item", title: "Item", detail: "Centre button", fallback: .l),
+        RacingAction(id: "look", title: "Look behind", detail: "Above Item, left", fallback: .x),
+        RacingAction(id: "skill", title: "Skill", detail: "Above Item, right", fallback: .up),
+    ]
+
+    /// Buttons a racing action can be mapped to (Home is left out so it can't be pressed mid-race by accident).
+    static let racingMappableButtons: [PadButton] = [.a, .b, .x, .y, .l, .r, .zl, .zr,
+                                                      .up, .down, .left, .right, .plus, .minus, .stickL, .stickR]
+
+    static func buttonName(_ b: PadButton) -> String {
+        switch b {
+        case .up: return "D-pad Up"
+        case .down: return "D-pad Down"
+        case .left: return "D-pad Left"
+        case .right: return "D-pad Right"
+        case .plus: return "+ (Plus)"
+        case .minus: return "\u{2212} (Minus)"
+        case .stickL: return "L-stick click"
+        case .stickR: return "R-stick click"
+        case .home: return "Home"
+        default: return b.description
+        }
+    }
+
+    static func racingButton(_ action: RacingAction, _ defaults: UserDefaults = .standard) -> PadButton {
+        guard defaults.object(forKey: action.key) != nil,
+              let b = PadButton(rawValue: defaults.integer(forKey: action.key)) else { return action.fallback }
+        return b
+    }
+
+    static func racingMapping(_ defaults: UserDefaults = .standard) -> RacingPad.Mapping {
+        func b(_ id: String) -> PadButton { racingButton(racingActions.first { $0.id == id }!, defaults) }
+        return RacingPad.Mapping(accelerate: b("accelerate"), brake: b("brake"), drift: b("drift"),
+                                 item: b("item"), look: b("look"), skill: b("skill"))
+    }
+
+    static func resetRacingMapping() {
+        for a in racingActions { UserDefaults.standard.removeObject(forKey: a.key) }
+    }
 
     static let aScaleKey = "espressu.touchlab.aScale"
     static let defaultAScale = 1.0
@@ -214,6 +271,14 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.adaptiveResetKey) private var adaptiveResets = 0
     @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
     @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
+    @AppStorage(TouchLabSettings.racingLockKey) private var racingLock = false
+    @AppStorage(TouchLabSettings.racingLockHoldKey) private var racingLockHold = TouchLabSettings.defaultRacingLockHold
+    @AppStorage("espressu.touchlab.racing.map.accelerate") private var mapAccelerate = PadButton.a.rawValue
+    @AppStorage("espressu.touchlab.racing.map.brake") private var mapBrake = PadButton.b.rawValue
+    @AppStorage("espressu.touchlab.racing.map.drift") private var mapDrift = PadButton.r.rawValue
+    @AppStorage("espressu.touchlab.racing.map.item") private var mapItem = PadButton.l.rawValue
+    @AppStorage("espressu.touchlab.racing.map.look") private var mapLook = PadButton.x.rawValue
+    @AppStorage("espressu.touchlab.racing.map.skill") private var mapSkill = PadButton.up.rawValue
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
 
     var body: some View {
@@ -248,6 +313,9 @@ struct TouchLabPadOverlay: View {
         h.combine(adaptiveResets)
         h.combine(racingAuto)
         h.combine(racingTilt)
+        h.combine(racingLock)
+        h.combine(racingLockHold)
+        for m in [mapAccelerate, mapBrake, mapDrift, mapItem, mapLook, mapSkill] { h.combine(m) }
         h.combine(aScale)
         return h.finalize()
     }
@@ -269,7 +337,10 @@ struct TouchLabPadOverlay: View {
         case ZonePad.schemeInfo.id:
             return ZonePad(aScale: CGFloat(aScale))
         case RacingPad.schemeInfo.id:
-            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt),
+            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt,
+                                                        accelerateLock: racingLock,
+                                                        mapping: TouchLabSettings.racingMapping(),
+                                                        lockHold: racingLockHold),
                              aScale: CGFloat(aScale))
         default:
             return SchemeCatalog.make(id, aScale: CGFloat(aScale))

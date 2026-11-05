@@ -1,0 +1,119 @@
+name: Build EspressU IPA (racing controls)
+
+on:
+  push:
+    branches: [main, racing-controls]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  touchlab-check:
+    name: On-screen controls checks
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $XC"; sudo xcode-select -s "$XC"
+      - name: Run touchlab-check
+        working-directory: src/ios/Packages/EspressUTouchLab
+        run: swift run -c release touchlab-check
+
+  build:
+    name: Build unsigned IPA
+    needs: touchlab-check
+    runs-on: macos-26
+    timeout-minutes: 300
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      BUNDLE_ID: dev.espressu.EspressU
+      APP_VERSION: 1.4.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select newest Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $XC"; sudo xcode-select -s "$XC"; xcodebuild -version
+
+      - name: Install tools
+        run: |
+          brew install cmake ninja xcodegen pkg-config autoconf automake libtool ldid || true
+          xcodebuild -downloadComponent MetalToolchain || true
+          rustup target add aarch64-apple-ios || true
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-ios-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports*/**') }}
+          restore-keys: vcpkg-ios-
+
+      - name: Cache StikJIT
+        uses: actions/cache@v4
+        with:
+          path: |
+            dependencies/StikJIT.xcframework
+            dependencies/idevice
+            dependencies/.stikjit-commit
+          key: stikjit-${{ hashFiles('ci/build-stikjit.sh') }}
+
+      - name: Build StikJIT
+        run: |
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          ci/build-stikjit.sh
+
+      - name: Build Cemu core
+        run: |
+          cmake -S . -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DBUILD_HEADLESS_DYLIB=ON -DCMAKE_MACOSX_BUNDLE=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-ios --target CemuBin
+          mkdir -p build-ios/out && rm -rf build-ios/out/Cemu.framework
+          cp -R build-ios/src/Cemu.framework build-ios/out/
+
+      - name: Upload vcpkg logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build-ios/vcpkg-manifest-install.log
+            dependencies/vcpkg/buildtrees/**/*.log
+          if-no-files-found: ignore
+
+      - name: Build app
+        working-directory: src/ios
+        run: |
+          # Match the bundle ID of the EspressU 1.4 already on the phone so games and settings carry over.
+          sed -i '' "s/com\.am4rdev\.EspressU/${BUNDLE_ID}/g" project.yml
+          sed -i '' "s/MARKETING_VERSION: '1.0'/MARKETING_VERSION: '${APP_VERSION}'/" project.yml
+          xcodegen generate
+          xcodebuild -project EspressU.xcodeproj -scheme EspressU -sdk iphoneos -configuration Release \
+            -derivedDataPath "$GITHUB_WORKSPACE/dd" CODE_SIGNING_ALLOWED=NO build | tail -200
+
+      - name: Package IPA
+        run: |
+          APP=$(find dd/Build/Products/Release-iphoneos -maxdepth 1 -name 'EspressU.app' | head -1)
+          test -d "$APP"
+          if command -v ldid >/dev/null; then
+            ldid -Ssrc/ios/Sideload.entitlements "$APP/EspressU" || true
+          fi
+          mkdir -p ipa/Payload && cp -R "$APP" ipa/Payload/
+          (cd ipa && zip -qry "../EspressU-${APP_VERSION}-racing.ipa" Payload)
+          ls -lh EspressU-*.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EspressU-${{ env.APP_VERSION }}-racing-ipa
+          path: EspressU-*.ipa
+          retention-days: 30

@@ -91,7 +91,7 @@ for info in SchemeCatalog.all {
                 }
             }
             let required: Set<PadButton> = info.id == RacingPad.schemeInfo.id
-                ? [.a, .b, .x, .l, .r, .plus, .home] : Set(PadButton.allCases)
+                ? [.a, .b, .x, .l, .r, .up, .plus, .minus, .home] : Set(PadButton.allCases)
             let missing = required.subtracting(reachable)
             check(missing.isEmpty, "\(where_): unreachable \(missing.map(\.description).sorted())")
             check(stickCount == (info.id == RacingPad.schemeInfo.id ? 1 : 2), "\(where_): \(stickCount) sticks")
@@ -127,7 +127,7 @@ for info in SchemeCatalog.all {
 }
 
 for options in [RacingPad.Options(), RacingPad.Options(autoAccelerate: true), RacingPad.Options(tilt: true),
-                RacingPad.Options(autoAccelerate: true, tilt: true)] {
+                RacingPad.Options(autoAccelerate: true, tilt: true), RacingPad.Options(accelerateLock: true)] {
     for device in TargetDevice.all {
         for display in TargetDevice.Display.allCases {
             let scheme = RacingPad(options: options)
@@ -537,6 +537,48 @@ do {
     check(abs(tall.height - 450) < 0.01 && abs(tall.width - 800) < 0.01 && abs(tall.midX - 810) < 0.01,
           "aspectFit pillarboxes in a wide rect, got \(tall)")
 }
+
+// Accelerate lock: hold Gas past the hold time and let go, Gas stays held; tap Gas to release.
+do {
+    let (e, r, s) = racingEngine(RacingPad.Options(accelerateLock: true, lockHold: 0.6))
+    let a = pedalCentre(s, [.a]), b = pedalCentre(s, [.b]), rr = pedalCentre(s, [.r])
+    e.began(1, at: a, time: 0)
+    e.ended(1, at: a, time: 0.3)
+    check(r.held.isEmpty && !s.accelerateLocked, "racing lock: a short press does not lock, got \(r.held)")
+    e.began(1, at: a, time: 1)
+    e.ended(1, at: a, time: 1.7)
+    check(s.accelerateLocked && r.held == [.a], "racing lock: holding past the hold time locks Gas, got \(r.held)")
+    e.began(2, at: rr, time: 2)
+    check(r.held == [.a, .r], "racing lock: drifting while locked keeps Gas, got \(r.held)")
+    e.ended(2, at: rr, time: 2.5)
+    e.began(3, at: b, time: 3)
+    check(r.held == [.b], "racing lock: braking lets Gas go, got \(r.held)")
+    e.ended(3, at: b, time: 3.4)
+    check(r.held == [.a], "racing lock: Gas comes back after braking, got \(r.held)")
+    e.began(4, at: a, time: 4)
+    e.ended(4, at: a, time: 4.1)
+    check(!s.accelerateLocked && r.held.isEmpty, "racing lock: tapping Gas releases the lock, got \(r.held)")
+    let (e2, r2, s2) = racingEngine(RacingPad.Options(accelerateLock: true, lockHold: 1.5))
+    let a2 = pedalCentre(s2, [.a])
+    e2.began(1, at: a2, time: 0)
+    e2.ended(1, at: a2, time: 1.0)
+    check(!s2.accelerateLocked && r2.held.isEmpty, "racing lock: honours a longer hold time")
+}
+
+// Remapped racing controls send the chosen buttons.
+do {
+    let m = RacingPad.Mapping(accelerate: .zr, brake: .b, drift: .r, item: .zl, look: .y, skill: .down)
+    let (_, _, s) = racingEngine(RacingPad.Options(mapping: m))
+    var reachable: Set<PadButton> = []
+    for c in s.controls {
+        if case .button(let b) = c.kind { reachable.insert(b) }
+        if case .pedal(let set) = c.kind { reachable.formUnion(set) }
+    }
+    check(reachable.isSuperset(of: [.zr, .b, .r, .zl, .y, .down, .plus, .minus, .home]),
+          "racing mapping: remapped buttons reachable, got \(reachable.map(\.description).sorted())")
+    check(!reachable.contains(.a), "racing mapping: A no longer sent when Gas is remapped")
+}
+
 
 print("\(passes) passed, \(failures) failed")
 exit(Int32(min(failures, 125)))

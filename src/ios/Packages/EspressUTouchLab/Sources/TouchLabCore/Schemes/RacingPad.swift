@@ -5,16 +5,58 @@ public final class RacingPad: ControlScheme {
     public static let schemeInfo = SchemeInfo(
         id: "racing",
         name: "Racing",
-        summary: "Made for Mario Kart 8: a big steering area, Accelerate, Brake and Drift pedals where your thumb rests, and an A+R zone for drifting.")
+        summary: "Made for Mario Kart 8: a big steering area, Gas, Brake and Drift pedals where your thumb rests, a Gas+Drift zone, and Item, Look and Skill buttons. Every action can be remapped.")
+
+    /// Which Wii U button each racing action sends.
+    public struct Mapping: Equatable, Sendable {
+        public var accelerate: PadButton
+        public var brake: PadButton
+        public var drift: PadButton
+        public var item: PadButton
+        public var look: PadButton
+        public var skill: PadButton
+
+        public init(accelerate: PadButton = .a, brake: PadButton = .b, drift: PadButton = .r,
+                    item: PadButton = .l, look: PadButton = .x, skill: PadButton = .up) {
+            self.accelerate = accelerate
+            self.brake = brake
+            self.drift = drift
+            self.item = item
+            self.look = look
+            self.skill = skill
+        }
+
+        public static let standard = Mapping()
+
+        public var all: [PadButton] { [accelerate, brake, drift, item, look, skill] }
+    }
 
     public struct Options: Equatable, Sendable {
         public var autoAccelerate: Bool
         public var tilt: Bool
-        public init(autoAccelerate: Bool = false, tilt: Bool = false) {
+        /// Hold Gas for `lockHold` seconds and let go: Gas stays held. Tap Gas to release it.
+        public var accelerateLock: Bool
+        public var mapping: Mapping
+        /// Seconds Gas must be held before letting go locks it.
+        public var lockHold: Double
+        public init(autoAccelerate: Bool = false, tilt: Bool = false,
+                    accelerateLock: Bool = false, mapping: Mapping = .standard,
+                    lockHold: Double = RacingPad.defaultLockHold) {
             self.autoAccelerate = autoAccelerate
             self.tilt = tilt
+            self.accelerateLock = accelerateLock
+            self.mapping = mapping
+            self.lockHold = lockHold
         }
     }
+
+    public static let defaultLockHold: Double = 0.6
+    public static let lockHoldRange: ClosedRange<Double> = 0.2...2.0
+    public static let unlockTap: Double = 0.3
+    public static let lockedLabel = "GAS \u{1F512}"
+
+    /// True while the accelerate lock is holding Gas for you.
+    public private(set) var accelerateLocked = false
 
     public let options: Options
     public let aScale: CGFloat
@@ -71,30 +113,45 @@ public final class RacingPad: ControlScheme {
             PadControl(.pedal(buttons), shape: .roundedRect(r, cornerRadius: corner), role: role, label: label,
                        group: pedalGroup, reach: reach, chords: false)
         }
+        let m = options.mapping
         var controls: [PadControl] = [
-            pedal([.a], rect(xA, yA, wA, hA), .pedal, "A"),
-            pedal([.b], rect(xB, yC, wB, hA + hC), .pedal, "B"),
-            pedal([.a, .r], rect(xA, yC, wA, hC), .pedal, "A+R"),
-            pedal([.r], rect(xB, yR, wB + wA, hR), .pedal, "R"),
+            pedal([m.accelerate], rect(xA, yA, wA, hA), .pedal, "GAS"),
+            pedal([m.brake], rect(xB, yC, wB, hA + hC), .pedal, "BRAKE"),
+            pedal([m.accelerate, m.drift], rect(xA, yC, wA, hC), .pedal, "GAS+DRIFT"),
+            pedal([m.drift], rect(xB, yR, wB + wA, hR), .pedal, "DRIFT"),
         ]
 
         let steerMax = 0.36 * s.width
-        let itemW = 1.7 * u, itemH = 1.25 * u
+        let smallW = 1.6 * u, smallH = 1.1 * u, smallGap = 0.3 * u
+        let itemW = 2 * smallW + smallGap, itemH = 1.25 * u
         let margin = 0.6 * u
         let centreRoom = xB - s.minX - steerMax
         var steerRight = s.minX + steerMax
         var steerTop = bandTop + (landscape ? 0.25 : 0.08) * bandHeight
-        let itemRect: CGRect
+        let itemRect: CGRect, lookRect: CGRect, skillRect: CGRect
         if centreRoom >= itemW + 2 * margin {
+            // Item in the gap between steering and pedals; Look and Skill side by side just above it.
             let cx = (steerRight + xB) / 2
             itemRect = CGRect(x: cx - itemW / 2, y: yC - 0.2 * u, width: itemW, height: itemH)
+            let rowY = itemRect.minY - smallGap - smallH
+            lookRect = CGRect(x: itemRect.minX, y: rowY, width: smallW, height: smallH)
+            skillRect = CGRect(x: itemRect.maxX - smallW, y: rowY, width: smallW, height: smallH)
         } else {
+            // Narrow screens: Item top-left, Look and Skill under it, steering below them.
             itemRect = CGRect(x: s.minX + 0.3 * u, y: bandTop + 0.3 * u, width: itemW, height: itemH)
-            steerTop = max(steerTop, itemRect.maxY + 0.35 * u)
+            let rowY = itemRect.maxY + 0.25 * u
+            lookRect = CGRect(x: itemRect.minX, y: rowY, width: smallW, height: smallH)
+            skillRect = CGRect(x: itemRect.maxX - smallW, y: rowY, width: smallW, height: smallH)
+            steerTop = max(steerTop, lookRect.maxY + 0.35 * u)
             steerRight = min(steerRight, xB - 0.4 * u)
         }
-        controls.append(PadControl(.button(.l), shape: .roundedRect(itemRect, cornerRadius: corner), role: .shoulder, label: "L",
-                                   reach: 0.2 * u, priority: 2))
+        func action(_ b: PadButton, _ r: CGRect, _ label: String) -> PadControl {
+            PadControl(.button(b), shape: .roundedRect(r, cornerRadius: corner), role: .shoulder, label: label,
+                       reach: 0.2 * u, priority: 2)
+        }
+        controls.append(action(m.item, itemRect, "ITEM"))
+        controls.append(action(m.look, lookRect, "LOOK"))
+        controls.append(action(m.skill, skillRect, "SKILL"))
 
         let lockX = max(1.2 * u, min(0.3 * (steerRight - s.minX), 2.2 * u))
         let lockY = 1.2 * lockX
@@ -107,8 +164,7 @@ public final class RacingPad: ControlScheme {
         let rowY = bandTop + 0.2 * u + 0.4 * u
         let step = 1.3 * u
         var row: [PadControl] = [
-            PadControl(.button(.x), shape: .circle(center: CGPoint(x: s.midX - step, y: rowY), radius: PadParts.systemDiameter / 2 * u),
-                       role: .system, label: "X", reach: 0.25 * u, priority: 2),
+            PadParts.system(.minus, at: CGPoint(x: s.midX - step, y: rowY), u: u),
             PadParts.system(.plus, at: CGPoint(x: s.midX, y: rowY), u: u),
             PadParts.system(.home, at: CGPoint(x: s.midX + step, y: rowY), u: u),
         ]
@@ -164,11 +220,37 @@ public final class RacingPad: ControlScheme {
         steerOverrideX = tiltValue
     }
 
+    private func isGas(_ index: Int) -> Bool {
+        guard controls.indices.contains(index), case .pedal(let set) = controls[index].kind else { return false }
+        return set == [options.mapping.accelerate]
+    }
+
+    override public func didEnd(control index: Int, start: CGPoint, end: CGPoint, duration: Double) {
+        guard options.accelerateLock, isGas(index) else { return }
+        if accelerateLocked {
+            if duration < Self.unlockTap { accelerateLocked = false }
+        } else if duration >= min(max(options.lockHold, Self.lockHoldRange.lowerBound), Self.lockHoldRange.upperBound) {
+            accelerateLocked = true
+        }
+    }
+
+    public func releaseAccelerateLock() { accelerateLocked = false }
+
+    override public func render(pressed: Set<PadButton>, sticks: [PadStick: StickValue]) -> [RenderElement] {
+        var out = super.render(pressed: pressed, sticks: sticks)
+        if accelerateLocked, let i = out.firstIndex(where: { $0.role == .pedal && $0.label == "GAS" }) {
+            out[i].label = Self.lockedLabel
+            out[i].lit = true
+        }
+        return out
+    }
+
     override public func ambient() -> Contribution? {
         var buttons: Set<PadButton> = []
-        if options.autoAccelerate {
-            let braking = tracks.values.contains { $0.buttons.contains(.b) }
-            if !braking { buttons.insert(.a) }
+        if options.autoAccelerate || accelerateLocked {
+            let brake = options.mapping.brake
+            let braking = tracks.values.contains { $0.buttons.contains(brake) }
+            if !braking { buttons.insert(options.mapping.accelerate) }
         }
         var stick: PadStick?
         var value = StickValue.zero
@@ -181,6 +263,7 @@ public final class RacingPad: ControlScheme {
     }
 
     override public func layout(_ context: LayoutContext) {
+        accelerateLocked = false
         super.layout(context)
         applyTilt()
     }

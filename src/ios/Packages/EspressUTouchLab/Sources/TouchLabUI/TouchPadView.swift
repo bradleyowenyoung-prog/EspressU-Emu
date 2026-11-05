@@ -239,7 +239,8 @@ enum PadDrawing {
 
         guard !e.label.isEmpty, e.role != .zone, e.role != .stickBase else { return }
         let box = e.shape.boundingBox
-        let size = max(min(box.height * 0.42, 26), 10)
+        let fitWidth = 0.9 * box.width / max(CGFloat(e.label.count) * 0.62, 1)
+        let size = max(min(box.height * 0.42, 26, fitWidth), 8)
         let label = LabelCache.image(e.label, size: size, text: text, alpha: alpha)
         label.draw(at: CGPoint(x: box.midX - label.size.width / 2, y: box.midY - label.size.height / 2))
     }
