@@ -433,13 +433,13 @@ do {
 
 do {
     let (e, r, s) = racingEngine()
-    let a = pedalCentre(s, [.a]), ar = pedalCentre(s, [.a, .r]), rr = pedalCentre(s, [.r]), b = pedalCentre(s, [.b])
+    let a = pedalCentre(s, [.a]), ar = pedalCentre(s, [.a, .r]), b = pedalCentre(s, [.b])
+    check(!s.controls.contains { if case .pedal(let x) = $0.kind { return x == [.r] }; return false },
+          "racing: there is no drift-only pedal")
     e.began(1, at: a, time: 0)
     check(r.held == [.a], "racing: thumb on the accelerate zone holds A, got \(r.held)")
     e.moved(1, to: ar, time: 0.1)
-    check(r.held == [.a, .r], "racing: sliding up onto A+R holds both, got \(r.held)")
-    e.moved(1, to: rr, time: 0.2)
-    check(r.held == [.r], "racing: sliding on to the drift zone hands over to R, got \(r.held)")
+    check(r.held == [.a, .r], "racing: sliding up onto the Drift pedal holds A+R, got \(r.held)")
     e.moved(1, to: ar, time: 0.3)
     e.moved(1, to: a, time: 0.4)
     check(r.held == [.a], "racing: and back down to A, got \(r.held)")
@@ -541,7 +541,7 @@ do {
 // Accelerate lock: hold Gas past the hold time and let go, Gas stays held; tap Gas to release.
 do {
     let (e, r, s) = racingEngine(RacingPad.Options(accelerateLock: true, lockHold: 0.6))
-    let a = pedalCentre(s, [.a]), b = pedalCentre(s, [.b]), rr = pedalCentre(s, [.r])
+    let a = pedalCentre(s, [.a]), b = pedalCentre(s, [.b]), rr = pedalCentre(s, [.a, .r])
     e.began(1, at: a, time: 0)
     e.ended(1, at: a, time: 0.3)
     check(r.held.isEmpty && !s.accelerateLocked, "racing lock: a short press does not lock, got \(r.held)")

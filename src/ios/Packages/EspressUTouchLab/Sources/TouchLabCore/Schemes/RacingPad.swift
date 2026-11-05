@@ -5,7 +5,7 @@ public final class RacingPad: ControlScheme {
     public static let schemeInfo = SchemeInfo(
         id: "racing",
         name: "Racing",
-        summary: "Made for Mario Kart 8: a big steering area, Gas, Brake and Drift pedals where your thumb rests, a Gas+Drift zone, and Item, Look and Skill buttons. Every action can be remapped.")
+        summary: "Made for Mario Kart 8: compact controls in the bottom corners. Steering on the left; Gas, Brake and a Drift pedal above Gas (slide up to drift) on the right, with Item, Look and Skill. Every action can be remapped.")
 
     /// Which Wii U button each racing action sends.
     public struct Mapping: Equatable, Sendable {
@@ -100,13 +100,16 @@ public final class RacingPad: ControlScheme {
         let gap = 0.05 * u
 
         let a = PadParts.clampedAScale(aScale)
-        let wA = 2.7 * a * u, wB = 1.8 * u
-        let hA = 2.3 * a * u, hC = 1.5 * u, hR = 1.3 * u
+        // Compact corner layout: everything about half the old size, tucked into the
+        // bottom corners so the middle of the screen stays clear.
+        let wA = 1.35 * a * u, wB = 0.95 * u
+        let hA = 1.25 * a * u, hC = 0.8 * u
         let xA = s.maxX - wA, xB = xA - wB
-        let yA = s.maxY - hA, yC = yA - hC, yR = yC - hR
+        let yA = s.maxY - hA, yC = yA - hC
+        let brakeTop = yC + 0.35 * u
         func inset(_ r: CGRect) -> CGRect { r.insetBy(dx: gap / 2, dy: gap / 2) }
         func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect { inset(CGRect(x: x, y: y, width: w, height: h)) }
-        let corner = 0.3 * u
+        let corner = 0.25 * u
         let reach = gap
 
         func pedal(_ buttons: Set<PadButton>, _ r: CGRect, _ role: RenderElement.Role, _ label: String) -> PadControl {
@@ -114,48 +117,39 @@ public final class RacingPad: ControlScheme {
                        group: pedalGroup, reach: reach, chords: false)
         }
         let m = options.mapping
+        // Gas at the bottom-right edge, Drift (Gas + Drift together) straight above it so you
+        // can slide up into a drift, Brake to the left. There is no separate drift-only pedal.
         var controls: [PadControl] = [
             pedal([m.accelerate], rect(xA, yA, wA, hA), .pedal, "GAS"),
-            pedal([m.brake], rect(xB, yC, wB, hA + hC), .pedal, "BRAKE"),
-            pedal([m.accelerate, m.drift], rect(xA, yC, wA, hC), .pedal, "GAS+DRIFT"),
-            pedal([m.drift], rect(xB, yR, wB + wA, hR), .pedal, "DRIFT"),
+            pedal([m.brake], rect(xB, brakeTop, wB, s.maxY - brakeTop), .pedal, "BRAKE"),
+            pedal([m.accelerate, m.drift], rect(xA, yC, wA, hC), .pedal, "DRIFT"),
         ]
 
-        let steerMax = 0.36 * s.width
-        let smallW = 1.6 * u, smallH = 1.1 * u, smallGap = 0.3 * u
-        let itemW = 2 * smallW + smallGap, itemH = 1.25 * u
-        let margin = 0.6 * u
-        let centreRoom = xB - s.minX - steerMax
-        var steerRight = s.minX + steerMax
-        var steerTop = bandTop + (landscape ? 0.25 : 0.08) * bandHeight
-        let itemRect: CGRect, lookRect: CGRect, skillRect: CGRect
-        if centreRoom >= itemW + 2 * margin {
-            // Item in the gap between steering and pedals; Look and Skill side by side just above it.
-            let cx = (steerRight + xB) / 2
-            itemRect = CGRect(x: cx - itemW / 2, y: yC - 0.2 * u, width: itemW, height: itemH)
-            let rowY = itemRect.minY - smallGap - smallH
-            lookRect = CGRect(x: itemRect.minX, y: rowY, width: smallW, height: smallH)
-            skillRect = CGRect(x: itemRect.maxX - smallW, y: rowY, width: smallW, height: smallH)
-        } else {
-            // Narrow screens: Item top-left, Look and Skill under it, steering below them.
-            itemRect = CGRect(x: s.minX + 0.3 * u, y: bandTop + 0.3 * u, width: itemW, height: itemH)
-            let rowY = itemRect.maxY + 0.25 * u
-            lookRect = CGRect(x: itemRect.minX, y: rowY, width: smallW, height: smallH)
-            skillRect = CGRect(x: itemRect.maxX - smallW, y: rowY, width: smallW, height: smallH)
-            steerTop = max(steerTop, lookRect.maxY + 0.35 * u)
-            steerRight = min(steerRight, xB - 0.4 * u)
-        }
+        // Item to the left of Brake; Look and Skill in a small row above the pedals.
+        // A clear gap and a short reach keep them from stealing touches meant for a pedal.
+        let clear = 0.35 * u
+        let small: CGFloat = 0.2 * u
+        let itemW = 1.25 * u, itemH = 0.85 * u
+        let itemRect = CGRect(x: xB - clear - itemW, y: brakeTop, width: itemW, height: itemH)
+        let smallH = 0.6 * u
+        let rowTop = yC - clear - smallH
+        let lookRect = CGRect(x: xB, y: rowTop, width: wB, height: smallH)
+        let skillRect = CGRect(x: xA + gap, y: rowTop, width: wA - gap, height: smallH)
         func action(_ b: PadButton, _ r: CGRect, _ label: String) -> PadControl {
-            PadControl(.button(b), shape: .roundedRect(r, cornerRadius: corner), role: .shoulder, label: label,
-                       reach: 0.2 * u, priority: 2)
+            PadControl(.button(b), shape: .roundedRect(inset(r), cornerRadius: corner), role: .shoulder, label: label,
+                       reach: small / 2, priority: 2)
         }
         controls.append(action(m.item, itemRect, "ITEM"))
         controls.append(action(m.look, lookRect, "LOOK"))
         controls.append(action(m.skill, skillRect, "SKILL"))
 
-        let lockX = max(1.2 * u, min(0.3 * (steerRight - s.minX), 2.2 * u))
+        // Steering: a smaller area in the bottom-left corner.
+        let steerRoom = itemRect.minX - s.minX - 0.5 * u
+        let steerW = min(max(0.2 * s.width, 3.2 * u), steerRoom)
+        let steerH = min(max(0.5 * bandHeight, 3.2 * u), bandHeight - 1.3 * u)
+        let steer = CGRect(x: s.minX, y: s.maxY - steerH, width: steerW, height: steerH)
+        let lockX = max(1.2 * u, min(0.3 * steerW, 2.2 * u))
         let lockY = 1.2 * lockX
-        let steer = CGRect(x: s.minX, y: steerTop, width: steerRight - s.minX, height: s.maxY - steerTop)
         guard steer.width >= 2.8 * u, steer.height >= 3 * u || force else { return force ? controls : nil }
         let spec = SteerSpec(stick: .left, lockX: lockX, lockY: lockY, deadY: 0.45, followPast: 1.3, tilt: options.tilt)
         controls.append(PadControl(.steer(spec), shape: .roundedRect(inset(steer), cornerRadius: corner), role: .area,

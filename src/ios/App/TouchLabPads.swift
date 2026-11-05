@@ -39,10 +39,10 @@ enum TouchLabSettings {
     static let racingActions: [RacingAction] = [
         RacingAction(id: "accelerate", title: "Accelerate (Gas)", detail: "Bottom-right pedal", fallback: .a),
         RacingAction(id: "brake", title: "Brake / Reverse", detail: "Pedal left of Gas", fallback: .b),
-        RacingAction(id: "drift", title: "Drift / Hop", detail: "Top pedal; Gas+Drift sends both", fallback: .r),
-        RacingAction(id: "item", title: "Item", detail: "Centre button", fallback: .l),
-        RacingAction(id: "look", title: "Look behind", detail: "Above Item, left", fallback: .x),
-        RacingAction(id: "skill", title: "Skill", detail: "Above Item, right", fallback: .up),
+        RacingAction(id: "drift", title: "Drift / Hop", detail: "Drift pedal above Gas; sends Gas + Drift", fallback: .r),
+        RacingAction(id: "item", title: "Item", detail: "Left of Brake", fallback: .l),
+        RacingAction(id: "look", title: "Look behind", detail: "Above Brake", fallback: .x),
+        RacingAction(id: "skill", title: "Skill", detail: "Above Drift", fallback: .up),
     ]
 
     /// Buttons a racing action can be mapped to (Home is left out so it can't be pressed mid-race by accident).
